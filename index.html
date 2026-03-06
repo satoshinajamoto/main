@@ -177,6 +177,8 @@
         },
         () => {
           showRefresh();
+          locationReady = true;
+          checkReady();
         },
       );
 
@@ -197,6 +199,8 @@
         })
         .catch(() => {
           showRefresh();
+          cameraReady = true;
+          checkReady();
         });
 
       /* ================= LOOP ================= */
